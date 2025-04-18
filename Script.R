@@ -4,9 +4,10 @@ library(ggplot2)
 library(factoextra)
 library(cluster)
 library(psych)
+library(RColorBrewer)
 
 
-ai_data <- read.csv("/home/joaomonteiro/Desktop/EAD/Trabalho/AI_index_db.csv")
+ai_data <- read.csv("C:/Users/diogo/OneDrive/Ambiente de Trabalho/FCUP - Data Science/1º Ano/2º Semestre/Estatística e Análise de Dados/1st Assignment/AI_index_db.csv")
 
 
 # Basic inspection of the data
@@ -95,10 +96,17 @@ for (var in cat_vars) {
 }
 
 # 1.6 Bar charts for categorical variables
+pastel_colors <- brewer.pal(5, "Pastel1")
+
 par(mfrow = c(2, 2))
 for (var in cat_vars) {
-  barplot(table(ai_data[[var]]), main = paste("Distribution of", var), 
-          col = rainbow(length(table(ai_data[[var]]))), las = 2, cex.names = 0.7)
+  counts <- table(ai_data[[var]])
+  n_colors <- length(counts)
+  barplot(counts, 
+          main = paste("Distribution of", var), 
+          col = pastel_colors[1:n_colors], 
+          las = 2, 
+          cex.names = 0.7)
 }
 
 # 2. BIVARIATE ANALYSIS
