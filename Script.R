@@ -102,11 +102,21 @@ par(mfrow = c(2, 2))
 for (var in cat_vars) {
   counts <- table(ai_data[[var]])
   n_colors <- length(counts)
-  barplot(counts, 
-          main = paste("Distribution of", var), 
-          col = pastel_colors[1:n_colors], 
-          las = 2, 
-          cex.names = 0.7)
+  ymax <- max(counts) + 7
+  
+  bp <- barplot(counts,
+                main = paste("Distribution of", var),
+                col = pastel_colors[1:n_colors],
+                ylim = c(0, ymax),
+                xaxt = "n")  
+  
+  text(x = bp,
+       y = par("usr")[3] - 1.5,  
+       labels = names(counts),
+       srt = 45,
+       adj = 1,
+       xpd = TRUE,
+       cex = 0.8)
 }
 
 # 2. BIVARIATE ANALYSIS
