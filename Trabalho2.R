@@ -220,7 +220,7 @@ print(clusterboot_result$bootmean)
 #A estrutura de agrupamento é provavelmente espúria ou sensível a ruído.
 
 
-################### Gaussian Mixture Models (EM algorithm) ###############
+## Gaussian Mixture Models (EM algorithm) 
 
 # G = 7 clusters (escolhido previamente)
 mod7 <- Mclust(scaled_data, G = 7)
@@ -239,7 +239,7 @@ ggplot(scores, aes(x = Comp.1, y = Comp.2, color = em_cluster)) +
   theme_minimal() +
   labs(title = "EM Clustering com 7 Clusters", x = "PC1", y = "PC2", color = "Cluster")
 
-################## Avaliação com métricas de cluster (para G = 7)
+#Avaliação (para G = 7)
 
 cl7 <- mod7$classification
 dist_mat <- dist(scaled_data)
