@@ -71,7 +71,7 @@ df_clean <- dummy_cols(
 # Estas são as novas colunas numéricas que não estavam no dataset antes
 dummies <- df_clean[, setdiff(names(df_clean), c(colnames(numeric_features), "disease_burden_class"))]
 
-# 6. Reconstruir o dataset com: scaled vars + dummies + target
+# 6. Reconstruir o dataset com: scaled vars + dummies
 scaled_data <- data.frame(scaled_data, dummies)
 
 
