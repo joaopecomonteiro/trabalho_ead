@@ -6,6 +6,8 @@ library(factoextra)
 library(mclust)
 library(cluster)
 library(fpc)
+library(fastDummies)
+library(corrplot)
 
 
 df <- read.csv("water_pollution_disease.csv")
@@ -16,6 +18,10 @@ df <- read.csv("water_pollution_disease.csv")
 df$disease_burden <- df$Diarrheal.Cases.per.100.000.people +
   df$Cholera.Cases.per.100.000.people +
   df$Typhoid.Cases.per.100.000.people
+
+df <- df[, !names(df) %in% c("Diarrheal.Cases.per.100.000.people", 
+                             "Cholera.Cases.per.100.000.people", 
+                             "Typhoid.Cases.per.100.000.people")]
 
 ggplot(df, aes(x = disease_burden)) +
   geom_histogram(binwidth = 50, fill = "steelblue", color = "black") +
@@ -44,16 +50,32 @@ df_clean$Water.Treatment.Method <- as.factor(df_clean$Water.Treatment.Method)
 
 table(df_clean$disease_burden_class)
 
+# 1. Selecionar variáveis numéricas antes do dummy encoding
+numeric_features <- df_clean[, sapply(df_clean, is.numeric)]
+
+# 2. Remover a variável target
+numeric_features <- numeric_features[, !names(numeric_features) %in% "disease_burden_class"]
+
+# 3. Fazer scaling apenas nas variáveis numéricas (excluindo dummies que ainda não foram criadas)
+scaled_data <- scale(numeric_features)
+
+# 4. One-hot encoding das variáveis fator (exceto a variável target)
+df_clean <- dummy_cols(
+  df_clean,
+  select_columns = names(df_clean)[sapply(df_clean, is.factor) & names(df_clean) != "disease_burden_class"],
+  remove_first_dummy = TRUE,
+  remove_selected_columns = TRUE
+)
+
+# 5. Selecionar apenas as colunas dummy (as novas criadas)
+# Estas são as novas colunas numéricas que não estavam no dataset antes
+dummies <- df_clean[, setdiff(names(df_clean), c(colnames(numeric_features), "disease_burden_class"))]
+
+# 6. Reconstruir o dataset com: scaled vars + dummies + target
+scaled_data <- data.frame(scaled_data, dummies)
 
 
 # KMeans
-
-numeric_features <- df_clean[, sapply(df_clean, is.numeric)]
-# Remove the target 
-numeric_features <- numeric_features[, !names(numeric_features) %in% "disease_burden_class"]
-
-# Scale the features
-scaled_data <- scale(numeric_features)
 
 wss <- vector()
 for (k in 1:20) {
@@ -104,9 +126,9 @@ pca_data <- as.data.frame(pca$x[, 1:3])
 pca_data$cluster <- as.factor(kmeans_result$cluster)
 
 summary(pca)
-# cada pca explica apenas 5%
+# cada pca explica apenas perto de 3%
 cor(scaled_data)
-# vars não correlacionadas
+# vars pouco correlacionadas
 
 fviz_cluster(kmeans_result, data = scaled_data, geom = "point", ellipse.type = "convex") +
   theme_minimal() +
@@ -136,7 +158,7 @@ print(gap_stat, method = "firstmax")
 # Plot do Gap Statistic
 fviz_gap_stat(gap_stat) +
   ggtitle("Gap Statistic para Determinar o Número Ótimo de Clusters")
-# O melhor é só 1, 2 seria o seguinte, ainda assim, tendo em conta o intervalo de confiança, há sobreposição
+# O melhor é só 1, 2 seria o seguinte, ainda assim, tendo em conta o intervalo de confiança, há sobreposição com o 3
 
 
 # Hierarchical
@@ -159,6 +181,8 @@ cat("K-Means avg silhouette:", mean(km_sil[, 3]), "\n")
 hc_sil <- silhouette(as.integer(df_clean$HClust_Cluster), dist(scaled_data))
 cat("Hierarchical avg silhouette:", mean(hc_sil[, 3]), "\n")
 
+
+#Ambas as médias de silhouette são muito baixas (0.0388 e 0.0159), indicando que: A separação entre os clusters é fraca.;Os clusters formados não são muito distintos.;Possivelmente os dados não possuem uma estrutura de clusters muito clara
 
 hc2 <- hclust(dist_matrix, method = "complete")
 
@@ -202,12 +226,11 @@ cat("Within-cluster sum of squares:", res$within.cluster.ss, "\n")
 
 # Results
 
-# C-H: O índice é muito maior em K-Means, o que indica que este método obteve melhor separação entre clusters e maior coesão interna.
-# Silhouette: O valor é extremamente baixo em ambos (< 0.1), o que significa que os clusters não estão bem definidos.
-# Dunn: Ambos os valores são muito baixos (idealmente > 1), indicando clusters próximos uns dos outros e fraca separação. O método hierárquico tem um valor ligeiramente melhor, mas ainda insatisfatório.
+# C-H: Quanto maior o índice CH, melhor a separação entre os clusters e maior a compacidade interna. K-means claramente superior
+# Silhouette: Ambos têm Silhouette muito baixo, sugerindo clusters sobrepostos ou mal definidos. K-means ligeiramente superior mas fraco.
+# Dunn: Quanto maior, melhor (medida da separação entre clusters vs. dispersão interna). O método hierárquico tem um valor ligeiramente melhor, mas ainda insatisfatório.
 # W-C: K-Means apresenta menor variabilidade dentro dos clusters, o que significa maior coesão interna.
-# CONCLUSION: Nenhum método mostra uma estrutura de clustering clara nos dados, mas K-Means destaca-se em 2 dos 4 indicadores (e com mais diferença), sendo uma escolha ligeiramente melhor se tiveres de optar por um método de agrupamento entre os dois. Ainda assim, os dados podem não ter clusters naturais fortes, e considerar outros métodos ou transformações pode ser o passo seguinte.
-
+# CONCLUSION: Nenhum método mostra uma estrutura de clustering clara nos dados, Ambos os métodos estão a produzir clusters fracos (Silhouette muito baixo). K-means é, no geral, o mais consistente em termos de separação e compacidade.
 
 
 # Estabilidade dos clusters (Jaccard Index)
@@ -222,15 +245,18 @@ clusterboot_result <- clusterboot(
 
 cat("Estabilidade (Jaccard médio por cluster):\n")
 print(clusterboot_result$bootmean)
-# A estrutura dos clusters produzida pelo clustering hierárquico com k = 2 não é estável, especialmente o primeiro cluster. Isto reforça os outros indicadores que também apontavam fraca separação entre grupos. Talvez os dados não tenham uma estrutura natural de agrupamento clara
-
+# O cluster 1 tem estabilidade moderada (~0.49), ou seja, menos da metade dos membros do cluster são consistentes entre as amostras bootstrap. O cluster 2 tem estabilidade mais baixa (~0.29), o que indica que ele é menos robusto, com mais variações no agrupamento em diferentes amostras. Os clusters têm uma estabilidade relativamente baixa a moderada, sugerindo que eles não são muito robustos e que o agrupamento pode ser sensível a pequenas alterações nos dados.
 
 
 # Gaussian Mixture Models (EM algorithm) 
 
-mod7 <- Mclust(scaled_data)
+mod7 <- Mclust(scaled_data) # Escolhe 1
 summary(mod7)
 plot(mod7)
+
+# Avaliação com métricas de cluster (para G = 2)
+
+mod7 <- Mclust(scaled_data, G=2)
 
 # Visualização dos clusters em PC1 vs PC2
 df7 <- as.data.frame(scaled_data)
@@ -245,7 +271,7 @@ ggplot(scores, aes(x = Comp.1, y = Comp.2, color = em_cluster)) +
   theme_minimal() +
   labs(title = "EM Clustering com 2 Clusters", x = "PC1", y = "PC2", color = "Cluster")
 
-# Avaliação com métricas de cluster (para G = 2)
+
 
 cl7 <- mod7$classification
 dist_mat <- dist(scaled_data)
@@ -255,26 +281,34 @@ sil7 <- mean(silhouette(cl7, dist_mat)[, 3])
 cat("Métricas para G = 2:\n")
 cat("BIC:", mod7$bic, "\n")
 cat("Calinski-Harabasz Index:", stats7$ch, "\n")
-# GMM tem melhor separação que o modelo hierárquico, mas pior que K-Means.
+# GMM tem melhor separação que o modelo hierárquico, mas pior que K-Means
 cat("Silhouette médio:", sil7, "\n")
-# Ainda é um valor muito baixo, indicando fraca estrutura de clusters, mas é ligeiramente melhor no GMM.
+# A média do índice silhouette para o GMM é cerca de 0.037, valor muito próximo ao do K-Means (0.0338) e um pouco maior que o do Hierarchical (0.0127). Ainda é um valor muito baixo, o que indica que a estrutura dos clusters continua fraca e não muito clara. GMM tem um desempenho ligeiramente melhor que Hierarchical e quase igual ao K-Means nesse aspecto.
 cat("Dunn Index:", stats7$dunn, "\n")
-# GMM tem o pior índice de Dunn dos três — ou seja, os clusters estão ainda menos separados do que nos outros métodos.
+# GMM tem um índice de Dunn muito semelhante ao do K-means mas inferior ao hierarchical
+
 
 
 
 # LDA and QDA
 
-
-
 df <- read.csv("water_pollution_disease.csv")
-
-# Pre-Processing
-# Target Creation
 
 df$disease_burden <- df$Diarrheal.Cases.per.100.000.people +
   df$Cholera.Cases.per.100.000.people +
   df$Typhoid.Cases.per.100.000.people
+
+df <- df[, !names(df) %in% c("Diarrheal.Cases.per.100.000.people", 
+                             "Cholera.Cases.per.100.000.people", 
+                             "Typhoid.Cases.per.100.000.people")]
+
+ggplot(df, aes(x = disease_burden)) +
+  geom_histogram(binwidth = 50, fill = "steelblue", color = "black") +
+  theme_minimal() +
+  labs(title = "Histogram of Disease Burden",
+       x = "Disease Burden (per 100,000 people)",
+       y = "Frequency")
+
 
 df$disease_burden_class <- cut(df$disease_burden,
                                breaks = c(0, 150, 300, 450, Inf),
@@ -293,11 +327,36 @@ df_clean$Region <- as.factor(df_clean$Region)
 df_clean$Water.Source.Type <- as.factor(df_clean$Water.Source.Type)
 df_clean$Water.Treatment.Method <- as.factor(df_clean$Water.Treatment.Method)
 
+table(df_clean$disease_burden_class)
+
+# 1. Selecionar variáveis numéricas antes do dummy encoding
+numeric_features <- df_clean[, sapply(df_clean, is.numeric)]
+
+# 2. Remover a variável target
+numeric_features <- numeric_features[, !names(numeric_features) %in% "disease_burden_class"]
+
+# 3. Fazer scaling apenas nas variáveis numéricas (excluindo dummies que ainda não foram criadas)
+scaled_data <- scale(numeric_features)
+
+# 4. One-hot encoding das variáveis fator (exceto a variável target)
+df_clean <- dummy_cols(
+  df_clean,
+  select_columns = names(df_clean)[sapply(df_clean, is.factor) & names(df_clean) != "disease_burden_class"],
+  remove_first_dummy = TRUE,
+  remove_selected_columns = TRUE
+)
+
+# 5. Selecionar apenas as colunas dummy (as novas criadas)
+# Estas são as novas colunas numéricas que não estavam no dataset antes
+dummies <- df_clean[, setdiff(names(df_clean), c(colnames(numeric_features), "disease_burden_class"))]
+
+# 6. Reconstruir o dataset com: scaled vars + dummies + target
+scaled_data <- data.frame(scaled_data, dummies, disease_burden_class = df_clean$disease_burden_class)
 
 set.seed(123)
-trainIndex <- createDataPartition(df_clean$disease_burden_class, p = 0.8, list = FALSE)
-trainData <- df_clean[trainIndex, ]
-testData <- df_clean[-trainIndex, ]
+trainIndex <- createDataPartition(scaled_data$disease_burden_class, p = 0.8, list = FALSE)
+trainData <- scaled_data[trainIndex, ]
+testData <- scaled_data[-trainIndex, ]
 
 
 # LDA
@@ -328,6 +387,4 @@ qda_pred <- predict(qda_model, newdata = testData)
 
 # Evaluate performance
 confusionMatrix(qda_pred$class, testData$disease_burden_class)
-
-
 
